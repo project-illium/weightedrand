@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/jmcvetta/randutil"
-	"github.com/mroth/weightedrand/v2"
 )
 
 const BMMinChoices = 10

@@ -1,4 +1,4 @@
-module github.com/mroth/weightedrand/examples/compbench
+module github.com/project-illium/weightedrand/examples/compbench
 
 go 1.18
 
@@ -7,4 +7,4 @@ require (
 	github.com/mroth/weightedrand/v2 v2.0.0
 )
 
-replace github.com/mroth/weightedrand/v2 => ../..
+replace github.com/project-illium/weightedrand/v2 => ../..

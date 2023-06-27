@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/mroth/weightedrand/v2"
+	"github.com/project-illium/weightedrand/v2"
 )
 
 func main() {
