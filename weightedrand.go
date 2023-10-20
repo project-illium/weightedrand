@@ -3,15 +3,14 @@
 // each element to be selected not being equal, but defined by relative
 // "weights" (or probabilities). This is called weighted random selection.
 //
-// Compare this package with (github.com/jmcvetta/randutil).WeightedChoice,
-// which is optimized for the single operation case. In contrast, this package
-// creates a presorted cache optimized for binary search, allowing for repeated
-// selections from the same set to be significantly faster, especially for large
-// data sets.
+// This package creates a presorted cache optimized for binary search, allowing
+// for repeated selections from the same set to be significantly faster,
+// especially for large data sets.
 package weightedrand
 
 import (
 	"errors"
+	"math"
 	"math/rand"
 	"sort"
 )
@@ -53,6 +52,11 @@ func NewChooser[T any, W integer](choices ...Choice[T, W]) (*Chooser[T, W], erro
 			continue // ignore negative weights, can never be picked
 		}
 
+		// case of single ~uint64 or similar value that exceeds maxInt on its own
+		if uint64(c.Weight) >= maxInt {
+			return nil, errWeightOverflow
+		}
+
 		if (maxInt - runningTotal) <= weight {
 			return nil, errWeightOverflow
 		}
@@ -68,8 +72,8 @@ func NewChooser[T any, W integer](choices ...Choice[T, W]) (*Chooser[T, W], erro
 }
 
 const (
-	intSize = 32 << (^uint(0) >> 63) // cf. strconv.IntSize
-	maxInt  = 1<<(intSize-1) - 1
+	maxInt    = math.MaxInt64
+	maxUint64 = math.MaxUint64
 )
 
 // Possible errors returned by NewChooser, preventing the creation of a Chooser
@@ -87,7 +91,7 @@ var (
 
 // Pick returns a single weighted random Choice.Item from the Chooser.
 //
-// Utilizes global rand as the source of randomness.
+// Utilizes global rand as the source of randomness. Safe for concurrent usage.
 func (c Chooser[T, W]) Pick() T {
 	r := rand.Int63n(c.max) + 1
 	i := searchInts(c.totals, r)
@@ -103,6 +107,10 @@ func (c Chooser[T, W]) Pick() T {
 //
 // It is the responsibility of the caller to ensure the provided rand.Source is
 // free from thread safety issues.
+//
+// Deprecated: Since go1.21 global rand no longer suffers from lock contention
+// when used in multiple high throughput goroutines, as long as you don't
+// manually seed it. Use [Chooser.Pick] instead.
 func (c Chooser[T, W]) PickSource(rs *rand.Rand) T {
 	r := rs.Int63n(c.max) + 1
 	i := searchInts(c.totals, r)
@@ -116,6 +124,9 @@ func (c Chooser[T, W]) PickSource(rs *rand.Rand) T {
 // overhead.
 //
 // Thus, this is essentially manually inlined version.  In our use case here, it
+// results in a significant throughput increase for Pick.
+//
+// See also github.com/mroth/xsort.
 // results in a up to ~33% overall throughput increase for Pick().
 func searchInts(a []int64, x int64) int {
 	// Possible further future optimization for searchInts via SIMD if we want

@@ -2,8 +2,8 @@ package weightedrand
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -32,10 +32,6 @@ func Example() {
 /******************************************************************************
 *	Tests
 *******************************************************************************/
-
-func init() {
-	rand.Seed(time.Now().UTC().UnixNano()) // only necessary prior to go1.20
-}
 
 const (
 	testChoices    = 10
@@ -81,9 +77,41 @@ func TestNewChooser(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewChooser(tt.cs...)
+			c, err := NewChooser(tt.cs...)
 			if err != tt.wantErr {
 				t.Errorf("NewChooser() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if err == nil { // run a few Picks to make sure there are no panics
+				for i := 0; i < 10; i++ {
+					_ = c.Pick()
+				}
+			}
+		})
+	}
+
+	u64tests := []struct {
+		name    string
+		cs      []Choice[rune, uint64]
+		wantErr error
+	}{
+		{
+			name:    "weight overflow from single uint64 exceeding system maxInt",
+			cs:      []Choice[rune, uint64]{{Item: 'a', Weight: maxInt + 1}},
+			wantErr: errWeightOverflow,
+		},
+	}
+	for _, tt := range u64tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := NewChooser(tt.cs...)
+			if err != tt.wantErr {
+				t.Errorf("NewChooser() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if err == nil { // run a few Picks to make sure there are no panics
+				for i := 0; i < 10; i++ {
+					_ = c.Pick()
+				}
 			}
 		})
 	}
@@ -181,11 +209,11 @@ func verifyFrequencyCounts(t *testing.T, counts map[int]int, choices []Choice[in
 *******************************************************************************/
 
 const BMMinChoices = 10
-const BMMaxChoices = 1000000
+const BMMaxChoices = 10_000_000
 
 func BenchmarkNewChooser(b *testing.B) {
 	for n := BMMinChoices; n <= BMMaxChoices; n *= 10 {
-		b.Run(strconv.Itoa(n), func(b *testing.B) {
+		b.Run(fmt.Sprintf("size=%s", fmt1eN(n)), func(b *testing.B) {
 			choices := mockChoices(n)
 			b.ResetTimer()
 
@@ -198,7 +226,7 @@ func BenchmarkNewChooser(b *testing.B) {
 
 func BenchmarkPick(b *testing.B) {
 	for n := BMMinChoices; n <= BMMaxChoices; n *= 10 {
-		b.Run(strconv.Itoa(n), func(b *testing.B) {
+		b.Run(fmt.Sprintf("size=%s", fmt1eN(n)), func(b *testing.B) {
 			choices := mockChoices(n)
 			chooser, err := NewChooser(choices...)
 			if err != nil {
@@ -215,7 +243,25 @@ func BenchmarkPick(b *testing.B) {
 
 func BenchmarkPickParallel(b *testing.B) {
 	for n := BMMinChoices; n <= BMMaxChoices; n *= 10 {
-		b.Run(strconv.Itoa(n), func(b *testing.B) {
+		b.Run(fmt.Sprintf("size=%s", fmt1eN(n)), func(b *testing.B) {
+			choices := mockChoices(n)
+			chooser, err := NewChooser(choices...)
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					_ = chooser.Pick()
+				}
+			})
+		})
+	}
+}
+
+func BenchmarkPickSourceParallel(b *testing.B) {
+	for n := BMMinChoices; n <= BMMaxChoices; n *= 10 {
+		b.Run(fmt.Sprintf("size=%s", fmt1eN(n)), func(b *testing.B) {
 			choices := mockChoices(n)
 			chooser, err := NewChooser(choices...)
 			if err != nil {
@@ -241,4 +287,10 @@ func mockChoices(n int) []Choice[rune, int] {
 		choices = append(choices, c)
 	}
 	return choices
+}
+
+// fmt1eN returns simplified order of magnitude scientific notation for n,
+// e.g. "1e2" for 100, "1e7" for 10 million.
+func fmt1eN(n int) string {
+	return fmt.Sprintf("1e%d", int(math.Log10(float64(n))))
 }
